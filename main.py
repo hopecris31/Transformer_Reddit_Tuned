@@ -13,14 +13,17 @@ model = AutoModelForCausalLM.from_pretrained("gpt2", pad_token_id=tokenizer.eos_
 # download the reddit dataset from Huggingface
 raw_datasets = load_dataset("reddit")
 
+
 # split the datasets into a training(70%), validation(15%), and test(15%) sets.
-train_data, test_data = train_test_split(raw_datasets, test_size=0.15, random_state=42)
-train_data, val_data = train_test_split(raw_datasets, test_size=0.15, random_state=42)
+train_and_val_data, test_data = train_test_split(raw_datasets, test_size=0.15, random_state=42)
+train_data, val_data = train_test_split(raw_datasets, test_size=0.1765, random_state=42)
 
+train_data.save_to_disk("train_dataset")
+val_data.save_to_disk("val_dataset")
+test_data.save_to_disk("test_dataset")
 
-
-def tokenizer(example):
-  tokenized_input = tokenizer(example, return_tensors="pt")
+def tokenizer(string):
+  tokenized_input = tokenizer(string, return_tensors="pt")
   return {"content": tokenized_input["content"][0]}
 
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
