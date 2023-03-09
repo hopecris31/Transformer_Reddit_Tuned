@@ -1,31 +1,68 @@
 import torch
 import numpy as np
-import evaluate
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
-from sklearn.model_selection import train_test_split
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorWithPadding
+from transformers import DataCollatorWithPadding
+from transformers import Trainer, TrainingArguments,AutoModelWithLMHead
+import evaluate
 
+##### FINE-TUNING A PRE-TRAINED MODEL #####
+print("Fine-tuning GPT-2")
 
 checkpoint = "gpt2"
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-model = AutoModelForCausalLM.from_pretrained("gpt2", pad_token_id=tokenizer.eos_token_id)
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+tokenizer.pad_token = tokenizer.eos_token
+model = AutoModelForCausalLM.from_pretrained(checkpoint)
 
-# download the reddit dataset from Huggingface
-raw_datasets = load_dataset("reddit")
+##### PREPARING THE DATA #####
+print("Preparing the Data")
+raw_datasets = load_dataset("reddit", split="train[:50%]")
 
+print("Column Names: ", raw_datasets.column_names)
 
-# split the datasets into a training(70%), validation(15%), and test(15%) sets.
-train_and_val_data, test_data = train_test_split(raw_datasets, test_size=0.15, random_state=42)
-train_data, val_data = train_test_split(raw_datasets, test_size=0.1765, random_state=42)
+print("Tokenizing the Data")
 
-train_data.save_to_disk("train_dataset")
-val_data.save_to_disk("val_dataset")
-test_data.save_to_disk("test_dataset")
+def tokenize_function(example):
+    return tokenizer(example["subreddit"], example["content"], truncation=True)
 
-def tokenizer(string):
-  tokenized_input = tokenizer(string, return_tensors="pt")
-  return {"content": tokenized_input["content"][0]}
+tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
 
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-example_inputs = ["Your name is ", "How do I do"]
+print("Training")
+
+
+
+def compute_metrics(eval_preds):
+    metric = evaluate.load("reddit")
+    logits, labels = eval_preds
+    predictions = np.argmax(logits, axis=-1)
+    return metric.compute(predictions=predictions, references=labels)
+
+training_args = TrainingArguments(
+                                output_dir="./redditGPT",  # The output directory
+                                overwrite_output_dir=True,  # overwrite the content of the output directory
+                                num_train_epochs=2,
+                                per_device_train_batch_size=8,  # batch size for training
+                                per_device_eval_batch_size=16,  # batch size for evaluation
+                                eval_steps=200,  # Number of update steps between two evaluations.
+                                save_steps=400,  # after # steps model is saved
+                                warmup_steps=250,  # number of warmup steps for learning rate scheduler
+                                prediction_loss_only=True,
+                                evaluation_strategy="steps",
+                                label_names=["content", "subreddit"]
+                                )
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_datasets,
+    data_collator=data_collator,
+    tokenizer=tokenizer,
+    compute_metrics=compute_metrics)
+
+trainer.train()
+path = "C:/Users/hopec/Desktop/NLP_Transformer"
+trainer.save_model(path + "/ChatGRT")
+
+trainer.evaluate(tokenized_datasets)
